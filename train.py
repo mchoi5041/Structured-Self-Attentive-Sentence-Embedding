@@ -17,27 +17,32 @@ import os
 def Frobenius(mat):
     size = mat.size()
     if len(size) == 3:  # batched matrix
-        ret = (torch.sum(torch.sum((mat ** 2), 1), 2).squeeze() + 1e-10) ** 0.5
+        ret = (torch.sum(torch.sum((mat ** 2), 2), 1).squeeze() + 1e-10) ** 0.5
         return torch.sum(ret) / size[0]
     else:
         raise Exception('matrix for computing Frobenius norm should be with 3 dims')
 
 
 def package(data, volatile=False):
+
     """Package data for training / evaluation."""
-    data = map(lambda x: json.loads(x), data)
-    dat = map(lambda x: map(lambda y: dictionary.word2idx[y], x['text']), data)
+    data = list(map(lambda x: json.loads(x), data))     
+    # data --> 12: {'label': 1, 'text': ['I', 'go', 'to', 'the', 'school', '.']}
+    dat = list(map(lambda x: list(map(lambda y: dictionary.word2idx[y], x['text'])), data))
+    # dat --> 12: {123(I), 243435(go), 243153(to), ...}
+
     maxlen = 0
     for item in dat:
         maxlen = max(maxlen, len(item))
-    targets = map(lambda x: x['label'], data)
+    targets = list(map(lambda x: x['label'], data))
     maxlen = min(maxlen, 500)
     for i in range(len(data)):
-        if maxlen < len(dat[i]):
+        if maxlen < len(dat[i]):            # cut 'dat' to 500 words or less.
             dat[i] = dat[i][:maxlen]
         else:
             for j in range(maxlen - len(dat[i])):
-                dat[i].append(dictionary.word2idx['<pad>'])
+                dat[i].append(dictionary.word2idx['<pad>']) # fill padding for remaining space.
+
     dat = Variable(torch.LongTensor(dat), volatile=volatile)
     targets = Variable(torch.LongTensor(targets), volatile=volatile)
     return dat.t(), targets
@@ -63,24 +68,28 @@ def evaluate():
 
 
 def train(epoch_number):
+    
     global best_val_loss, best_acc
-    model.train()
+    model.train()       # Set the module in training mode.
     total_loss = 0
     total_pure_loss = 0  # without the penalization term
     start_time = time.time()
+
     for batch, i in enumerate(range(0, len(data_train), args.batch_size)):
+
         data, targets = package(data_train[i:i+args.batch_size], volatile=False)
         if args.cuda:
             data = data.cuda()
             targets = targets.cuda()
+
         hidden = model.init_hidden(data.size(1))
         output, attention = model.forward(data, hidden)
         loss = criterion(output.view(data.size(1), -1), targets)
         total_pure_loss += loss.data
 
-        if attention:  # add penalization term
+        if attention is not None:  # add penalization term
             attentionT = torch.transpose(attention, 1, 2).contiguous()
-            extra_loss = Frobenius(torch.bmm(attention, attentionT) - I[:attention.size(0)])
+            extra_loss = Frobenius(torch.bmm(attention, attentionT) - I[:attention.size(0)])    # bmm: batch matrix multiplication
             loss += args.penalization_coeff * extra_loss
         optimizer.zero_grad()
         loss.backward()
@@ -104,12 +113,14 @@ def train(epoch_number):
 #                print item.size(), torch.sum(item.data ** 2), torch.sum(item.grad ** 2).data[0]
 #            print model.encoder.ws2.weight.grad.data
 #            exit()
+    
     evaluate_start_time = time.time()
     val_loss, acc = evaluate()
     print('-' * 89)
     fmt = '| evaluation | time: {:5.2f}s | valid loss (pure) {:5.4f} | Acc {:8.4f}'
     print(fmt.format((time.time() - evaluate_start_time), val_loss, acc))
     print('-' * 89)
+
     # Save the model, if the validation loss is the best we've seen so far.
     if not best_val_loss or val_loss < best_val_loss:
         with open(args.save, 'wb') as f:
@@ -128,8 +139,8 @@ def train(epoch_number):
         torch.save(model, f)
     f.close()
 
-
 if __name__ == '__main__':
+
     # parse the arguments
     args = get_args()
 
@@ -154,22 +165,23 @@ if __name__ == '__main__':
     n_token = len(dictionary)
     model = Classifier({
         'dropout': args.dropout,
-        'ntoken': n_token,
-        'nlayers': args.nlayers,
-        'nhid': args.nhid,
-        'ninp': args.emsize,
-        'pooling': 'all',
-        'attention-unit': args.attention_unit,
-        'attention-hops': args.attention_hops,
-        'nfc': args.nfc,
-        'dictionary': dictionary,
-        'word-vector': args.word_vector,
-        'class-number': args.class_number
+        'ntoken': n_token,          # the number of words
+        'nlayers': args.nlayers,    # the number of hidden layers in Bi-LSTM. default 2.
+        'nhid': args.nhid,          # hidden layer size per layer
+        'ninp': args.emsize,        # word embedding size default 300
+        'pooling': 'all',           # 'all': use the Self-Attentive Encoder
+        'attention-unit': args.attention_unit,  # attention unit number, d_a in the paper, default 350
+        'attention-hops': args.attention_hops,  # hop number, r in the paper, default 1
+        'nfc': args.nfc,            # hidden layer size for MLP in the classifier, default 512
+        'dictionary': dictionary,   # location of the dictionary generated by the tokenizer
+        'word-vector': args.word_vector,    # location of the initial word vector, e.g. GloVe, should be a torch .pt model
+        'class-number': args.class_number   # number of class for the last step of classification
     })
+    print(args)
     if args.cuda:
         model = model.cuda()
-
-    print(args)
+    
+    # Identity matrix for frobenious norm regularization
     I = Variable(torch.zeros(args.batch_size, args.attention_hops, args.attention_hops))
     for i in range(args.batch_size):
         for j in range(args.attention_hops):
@@ -177,6 +189,7 @@ if __name__ == '__main__':
     if args.cuda:
         I = I.cuda()
 
+    # Loss function: CrossEntropyLoss, Optimizer: default Adam
     criterion = nn.CrossEntropyLoss()
     if args.optimizer == 'Adam':
         optimizer = optim.Adam(model.parameters(), lr=args.lr, betas=[0.9, 0.999], eps=1e-8, weight_decay=0)
@@ -185,9 +198,12 @@ if __name__ == '__main__':
     else:
         raise Exception('For other optimizers, please add it yourself. '
                         'supported ones are: SGD and Adam.')
+    
+    # Load data
     print('Begin to load data.')
     data_train = open(args.train_data).readlines()
     data_val = open(args.val_data).readlines()
+    
     try:
         for epoch in range(args.epochs):
             train(epoch)

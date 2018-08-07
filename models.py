@@ -4,6 +4,12 @@ from torch.autograd import Variable
 import torch.nn as nn
 import os
 
+def load_word_vector(path):
+    vector = []
+
+
+
+    return vector
 
 class BiLSTM(nn.Module):
 
@@ -19,6 +25,7 @@ class BiLSTM(nn.Module):
         self.dictionary = config['dictionary']
 #        self.init_weights()
         self.encoder.weight.data[self.dictionary.word2idx['<pad>']] = 0
+
         if os.path.exists(config['word-vector']):
             print('Loading word vectors from', config['word-vector'])
             vectors = torch.load(config['word-vector'])
@@ -29,9 +36,11 @@ class BiLSTM(nn.Module):
             for word in self.dictionary.word2idx:
                 if word not in vocab:
                     continue
-                real_id = self.dictionary.word2idx[word]
-                loaded_id = vocab[word]
-                self.encoder.weight.data[real_id] = vectors[loaded_id][:config['ninp']]
+                real_id = self.dictionary.word2idx[word]    # Word ID
+                loaded_id = vocab[word]                     # GloVe ID
+                # print('word: {}, id: {}[{}], type: {}'.format(word, real_id, loaded_id, type(word)))
+                # self.encoder.weight.data[real_id] = vectors[loaded_id][:config['ninp']]
+                self.encoder.weight.data[real_id] = torch.from_numpy(vectors[loaded_id][:config['ninp']]) # 300 dimension of GloVe vector
                 loaded_cnt += 1
             print('%d words from external word vectors loaded.' % loaded_cnt)
 
@@ -41,18 +50,20 @@ class BiLSTM(nn.Module):
 
     def forward(self, inp, hidden):
         emb = self.drop(self.encoder(inp))
-        outp = self.bilstm(emb, hidden)[0]
+        outp = self.bilstm(emb, hidden)[0]      # use a built-in function.
         if self.pooling == 'mean':
             outp = torch.mean(outp, 0).squeeze()
         elif self.pooling == 'max':
             outp = torch.max(outp, 0)[0].squeeze()
         elif self.pooling == 'all' or self.pooling == 'all-word':
-            outp = torch.transpose(outp, 0, 1).contiguous()
+            outp = torch.transpose(outp, 0, 1).contiguous()         # transpose dimension 0 and 1.
+                                                                    # contiguous(): Returns a contiguous tensor containing the same data as self.
+
         return outp, emb
 
     def init_hidden(self, bsz):
-        weight = next(self.parameters()).data
-        return (Variable(weight.new(self.nlayers * 2, bsz, self.nhid).zero_()),
+        weight = next(self.parameters()).data   # next(): Returns an iterator over module parameters.
+        return (Variable(weight.new(self.nlayers * 2, bsz, self.nhid).zero_()), # *2: BiLSTM
                 Variable(weight.new(self.nlayers * 2, bsz, self.nhid).zero_()))
 
 
@@ -76,6 +87,7 @@ class SelfAttentiveEncoder(nn.Module):
 
     def forward(self, inp, hidden):
         outp = self.bilstm.forward(inp, hidden)[0]
+
         size = outp.size()  # [bsz, len, nhid]
         compressed_embeddings = outp.view(-1, size[2])  # [bsz*len, nhid*2]
         transformed_inp = torch.transpose(inp, 0, 1).contiguous()  # [bsz, len]
@@ -91,6 +103,7 @@ class SelfAttentiveEncoder(nn.Module):
             # [bsz, hop, len] + [bsz, hop, len]
         alphas = self.softmax(penalized_alphas.view(-1, size[1]))  # [bsz*hop, len]
         alphas = alphas.view(size[0], self.attention_hops, size[1])  # [bsz, hop, len]
+
         return torch.bmm(alphas, outp), alphas
 
     def init_hidden(self, bsz):
@@ -105,6 +118,7 @@ class Classifier(nn.Module):
             self.encoder = BiLSTM(config)
             self.fc = nn.Linear(config['nhid'] * 2, config['nfc'])
         elif config['pooling'] == 'all':
+            print(config)
             self.encoder = SelfAttentiveEncoder(config)
             self.fc = nn.Linear(config['nhid'] * 2 * config['attention-hops'], config['nfc'])
         else:
@@ -122,16 +136,17 @@ class Classifier(nn.Module):
         self.pred.bias.data.fill_(0)
 
     def forward(self, inp, hidden):
-        outp, attention = self.encoder.forward(inp, hidden)
-        outp = outp.view(outp.size(0), -1)
-        fc = self.tanh(self.fc(self.drop(outp)))
-        pred = self.pred(self.drop(fc))
+        outp, attention = self.encoder.forward(inp, hidden) # run Self-Attentive encoder.
+        outp = outp.view(outp.size(0), -1)                  # reshape the output.
+        fc = self.tanh(self.fc(self.drop(outp)))            # run fully connected layer
+        pred = self.pred(self.drop(fc))                     # run last layer
         if type(self.encoder) == BiLSTM:
             attention = None
+
         return pred, attention
 
     def init_hidden(self, bsz):
-        return self.encoder.init_hidden(bsz)
+        return self.encoder.init_hidden(bsz)                # batch size
 
     def encode(self, inp, hidden):
         return self.encoder.forward(inp, hidden)[0]
