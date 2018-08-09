@@ -10,30 +10,32 @@ RATIO_TRAINING = .6
 RATIO_VALIDATION = .2
 RATIO_TESTING = .2
 
+# total_data_length = len(data)
+total_data_length = 1000
+
 if __name__ == '__main__':
 
     # input_file = './data/yelp_academic_dataset_review.json'
-    input_file = './data/tokenized-yelp.json'
+    # input_file = './data/tokenized-yelp.json'
+    input_file = './data/SST-2/tokenized-sst-10k.json'
 
     with open(input_file, 'r') as fin:
         data = fin.readlines()
         random.shuffle(data)
 
-        total_data_length = len(data)
-
         tr_size = int(total_data_length*RATIO_TRAINING)
         va_size = int(total_data_length*RATIO_VALIDATION)
         te_size = int(total_data_length*RATIO_TESTING)
 
-        train_data, valid_data, test_data = data[:tr_size], data[tr_size:tr_size+va_size], data[tr_size+va_size:]
+        train_data, valid_data, test_data = data[:tr_size], data[tr_size:tr_size+va_size], data[tr_size+va_size:tr_size+va_size+te_size]
         
         print(len(train_data))
         print(len(valid_data))
         print(len(test_data))
 
-        output_file_train = './data/tokenized-yelp-train.json'
-        output_file_valid = './data/tokenized-yelp-valid.json'
-        output_file_test = './data/tokenized-yelp-test.json'
+        output_file_train = './data/SST-2/tokenized-sst-10k-train.json'
+        output_file_valid = './data/SST-2/tokenized-sst-10k-val.json'
+        output_file_test = './data/SST-2/tokenized-sst-10k-test.json'
 
         with open(output_file_train, 'w') as fout_train:
             for i, line in enumerate(train_data):

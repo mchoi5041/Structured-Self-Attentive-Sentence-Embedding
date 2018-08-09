@@ -4,12 +4,6 @@ from torch.autograd import Variable
 import torch.nn as nn
 import os
 
-def load_word_vector(path):
-    vector = []
-
-
-
-    return vector
 
 class BiLSTM(nn.Module):
 
@@ -65,7 +59,6 @@ class BiLSTM(nn.Module):
         weight = next(self.parameters()).data   # next(): Returns an iterator over module parameters.
         return (Variable(weight.new(self.nlayers * 2, bsz, self.nhid).zero_()), # *2: BiLSTM
                 Variable(weight.new(self.nlayers * 2, bsz, self.nhid).zero_()))
-
 
 class SelfAttentiveEncoder(nn.Module):
 

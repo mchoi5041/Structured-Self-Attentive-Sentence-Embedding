@@ -99,6 +99,8 @@ def train(epoch_number):
 
         total_loss += loss.data
 
+        print('batch: {}, log_interval: {}, batch mod log_intererval: {}'.format(batch, args.log_interval, batch%args.log_interval))
+
         if batch % args.log_interval == 0 and batch > 0:
             elapsed = time.time() - start_time
             print('| epoch {:3d} | {:5d}/{:5d} batches | ms/batch {:5.2f} | loss {:5.4f} | pure loss {:5.4f}'.format(
@@ -117,8 +119,8 @@ def train(epoch_number):
     evaluate_start_time = time.time()
     val_loss, acc = evaluate()
     print('-' * 89)
-    fmt = '| evaluation | time: {:5.2f}s | valid loss (pure) {:5.4f} | Acc {:8.4f}'
-    print(fmt.format((time.time() - evaluate_start_time), val_loss, acc))
+    fmt = '| evaluation(epoch: {}) | time: {:5.2f}s | valid loss (pure) {:5.4f} | Acc {:8.4f}'
+    print(fmt.format( epoch_number, (time.time() - evaluate_start_time), val_loss, acc))
     print('-' * 89)
 
     # Save the model, if the validation loss is the best we've seen so far.
@@ -138,6 +140,17 @@ def train(epoch_number):
     with open(args.save[:-3]+'.epoch-{:02d}.pt'.format(epoch_number), 'wb') as f:
         torch.save(model, f)
     f.close()
+
+def report_test_result(message):
+    print('-' * 89)
+    print(message)
+    data_val = open(args.test_data).readlines()
+    evaluate_start_time = time.time()
+    test_loss, acc = evaluate()
+    print('-' * 89)
+    fmt = '| test | time: {:5.2f}s | test loss (pure) {:5.4f} | Acc {:8.4f}'
+    print(fmt.format((time.time() - evaluate_start_time), test_loss, acc))
+    print('-' * 89)
 
 if __name__ == '__main__':
 
@@ -207,14 +220,9 @@ if __name__ == '__main__':
     try:
         for epoch in range(args.epochs):
             train(epoch)
+
+        report_test_result('Final test result.')
     except KeyboardInterrupt:
-        print('-' * 89)
-        print('Exit from training early.')
-        data_val = open(args.test_data).readlines()
-        evaluate_start_time = time.time()
-        test_loss, acc = evaluate()
-        print('-' * 89)
-        fmt = '| test | time: {:5.2f}s | test loss (pure) {:5.4f} | Acc {:8.4f}'
-        print(fmt.format((time.time() - evaluate_start_time), test_loss, acc))
-        print('-' * 89)
-        exit(0)
+        report_test_result('Exit from training early.')
+    
+    exit(0)

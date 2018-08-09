@@ -10,9 +10,9 @@ class Dictionary(object):
             words = json.loads(open(path, 'r').readline())
             for item in words:
                 self.add_word(item)
-        self.add_word(' ')
-        self.add_word('\n')
-        self.add_word('\t')
+        # self.add_word(' ')
+        # self.add_word('\n')
+        # self.add_word('\t')
 
     def add_word(self, word):
         if word not in self.word2idx:
